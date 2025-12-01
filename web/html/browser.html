@@ -3,18 +3,19 @@
   <head>
     <title>File Browser</title>
 
-    <script src="node_modules/angular-filemanager/dep/jquery.min.js"></script>
-    <script src="node_modules/angular/angular.min.js"></script>
-    <script src="node_modules/angular-translate/dist/angular-translate.min.js"></script>
-    <script src="node_modules/ng-file-upload/dist/ng-file-upload.min.js"></script>
-    <script src="node_modules/angular-filemanager/dep/bootstrap.min.js"></script>
-    <script src="node_modules/angular-filemanager/dep/FileSaver.js"></script>
-    
-    <link rel="stylesheet" href="node_modules/angular-filemanager/dep/bootstrap.min.css" />
-    
-    <!-- angular-filemanager -->
-    <link rel="stylesheet" href="node_modules/angular-filemanager/angular-filemanager.min.css">
-    <script src="node_modules/angular-filemanager/angular-filemanager.min.js"></script>
+    <!-- Dependencies - using vendor versions to ensure compatibility with forked angular-filemanager -->
+    <script src="vendor/angular-filemanager/dep/jquery.min.js"></script>
+    <script src="vendor/angular/angular.min.js"></script>
+    <script src="vendor/angular-translate/dist/angular-translate.min.js"></script>
+    <script src="vendor/ng-file-upload/dist/ng-file-upload.min.js"></script>
+    <script src="vendor/angular-filemanager/dep/bootstrap.min.js"></script>
+    <script src="vendor/angular-filemanager/dep/FileSaver.js"></script>
+
+    <link rel="stylesheet" href="vendor/angular-filemanager/dep/bootstrap.min.css" />
+
+    <!-- angular-filemanager - local forked version with SFTP bridges -->
+    <link rel="stylesheet" href="vendor/angular-filemanager/angular-filemanager.min.css">
+    <script src="vendor/angular-filemanager/angular-filemanager.min.js"></script>
 
     <script type="text/javascript">
         angular.module('FileManagerApp').config(['fileManagerConfigProvider', function (config) {

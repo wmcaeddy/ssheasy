@@ -24,11 +24,29 @@ import (
 	"golang.org/x/time/rate"
 )
 
+// getEnvOrDefault returns the environment variable value or the default if not set
+func getEnvOrDefault(envKey, defaultVal string) string {
+	if val := os.Getenv(envKey); val != "" {
+		return val
+	}
+	return defaultVal
+}
+
 func main() {
-	publicAddr := flag.String("pub", ":5555", "listener address")
-	adminAddr := flag.String("priv", ":6666", "admin listener address")
-	adminKey := flag.String("adm-key", "qtIazZDhzrYERShXuYpqRx", "admin api key")
-	auditLogFile := flag.String("al", "connections.log", "log file to store connection request, if empty connection logging is disabled")
+	// Support both environment variables and flags (env takes precedence)
+	defaultPub := getEnvOrDefault("PORT", "5555")
+	if !strings.HasPrefix(defaultPub, ":") {
+		defaultPub = ":" + defaultPub
+	}
+	defaultPriv := getEnvOrDefault("ADMIN_PORT", "6666")
+	if !strings.HasPrefix(defaultPriv, ":") {
+		defaultPriv = ":" + defaultPriv
+	}
+
+	publicAddr := flag.String("pub", defaultPub, "listener address (env: PORT)")
+	adminAddr := flag.String("priv", defaultPriv, "admin listener address (env: ADMIN_PORT)")
+	adminKey := flag.String("adm-key", getEnvOrDefault("ADMIN_KEY", "qtIazZDhzrYERShXuYpqRx"), "admin api key (env: ADMIN_KEY)")
+	auditLogFile := flag.String("al", getEnvOrDefault("AUDIT_LOG", "connections.log"), "log file to store connection request (env: AUDIT_LOG)")
 	flag.Parse()
 	if *publicAddr == "" || *adminAddr == "" {
 		flag.PrintDefaults()
@@ -50,6 +68,11 @@ func main() {
 
 	startAdmin(*adminAddr, *adminKey)
 	r := mux.NewRouter()
+	// Health check endpoint for Railway
+	r.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("ok"))
+	}).Methods("GET")
 	r.Handle("/ws", wmux)
 	// http.Handle("/cl/", http.StripPrefix("/cl", http.FileServer(http.Dir("./html"))))
 	// r.PathPrefix("/cl/").Handler(http.StripPrefix("/cl", http.FileServer(http.Dir("./html"))))

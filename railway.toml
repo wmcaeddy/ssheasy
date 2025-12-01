@@ -1,0 +1,33 @@
+# Railway deployment configuration for ssheasy
+# This project deploys as two services: web and proxy
+#
+# Setup Instructions:
+# 1. Create a new Railway project
+# 2. Add two services from this repo:
+#    - "web" service: Set Dockerfile path to nginx/Dockerfile, root to /
+#    - "proxy" service: Set Dockerfile path to proxy/Dockerfile, root to /proxy
+# 3. Configure environment variables (see below)
+# 4. Enable private networking for proxy service
+# 5. Set up public domain for web service only
+#
+# Environment Variables:
+#
+# WEB SERVICE:
+#   PORT         - Set automatically by Railway
+#   PROXY_HOST   - Set to: proxy.railway.internal
+#   PROXY_PORT   - Set to: 5555 (or proxy's internal port)
+#
+# PROXY SERVICE:
+#   PORT         - Set automatically by Railway (public port)
+#   ADMIN_PORT   - Admin API port (default: 6666, optional)
+#   ADMIN_KEY    - Admin API key (set a secure value!)
+#   AUDIT_LOG    - Log file path (default: /tmp/connections.log)
+
+[build]
+builder = "dockerfile"
+
+[deploy]
+healthcheckPath = "/"
+healthcheckTimeout = 100
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3
