@@ -510,6 +510,12 @@ window.onload = function() {
     fitAddon.fit();
   }
 
+  resetFontSize = function() {
+    terminalFontSize = 14;
+    term.options.fontSize = terminalFontSize;
+    fitAddon.fit();
+  }
+
   $(document).ready(function(){
     $('#conBtn').prop('disabled',true);
     $('#hostInp').keyup(function(){ $('#conBtn').prop('disabled', notReady() ? true : false); })
@@ -768,6 +774,7 @@ li button {
                 <button type="button" class="btn btn-link col-md-1" onclick="searchAddon.findNext($('#searchTxt').val(),{caseSensitive:  $('#matchCaseChb').prop('checked')})">Find Next</button>
                 <button type="button" class="btn btn-link col-md-1" onclick="searchAddon.findPrevious($('#searchTxt').val(),{caseSensitive:  $('#matchCaseChb').prop('checked')})">Find Previous</button>
                 <button type="button" class="btn btn-link col-md-1" onclick="decreaseFontSize();" title="Decrease terminal font size">A-</button>
+                <button type="button" class="btn btn-link col-md-1" onclick="resetFontSize();" title="Reset terminal font size">A</button>
                 <button type="button" class="btn btn-link col-md-1" onclick="increaseFontSize();" title="Increase terminal font size">A+</button>
                 <button type="button" class="btn btn-link col-md-1" onclick="toggleFullScreen();">Toggle Fullscreen</button>
                 <button id="toggleFileBrowserBtn" type="button" class="btn btn-link col-md-1">Show File Browser</button>
