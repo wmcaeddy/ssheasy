@@ -1,11 +1,13 @@
 package main
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -44,26 +46,66 @@ func init() {
 	}
 }
 
+// adminRateLimiter provides rate limiting for admin endpoints
+var (
+	adminRateLimiter = rate.NewLimiter(rate.Limit(10), 20) // 10 req/sec, burst of 20
+	adminRateMu      sync.Mutex
+)
+
 func startAdmin(addr, key string) {
 	r := mux.NewRouter()
+
+	// Metrics endpoint - always available (for monitoring)
 	r.Handle("/metrics", promhttp.Handler())
-	s := r.PathPrefix("/config").Subrouter()
-	s.HandleFunc("/rate", getRate).Methods("GET")
-	s.HandleFunc("/rate", setRate).Methods("POST")
-	s.HandleFunc("/blacklist", getBlackList).Methods("GET")
-	s.HandleFunc("/blacklist", getBlackList).Methods("GET")
-	s.HandleFunc("/srcblacklist", getSrcBlackList).Methods("GET")
-	s.HandleFunc("	/srcblacklist", setSrcBlackList).Methods("POST")
-	s.Use(func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			log.Printf("admin request from %s", r.RemoteAddr)
-			if len(r.Header["Authorization"]) == 0 || r.Header["Authorization"][0] != "Basic "+key {
-				w.WriteHeader(http.StatusUnauthorized)
-				return
-			}
-			next.ServeHTTP(w, r)
+
+	// Health check for admin service
+	r.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("ok"))
+	}).Methods("GET")
+
+	// Config endpoints - only if admin key is configured
+	if key != "" {
+		s := r.PathPrefix("/config").Subrouter()
+		s.HandleFunc("/rate", getRate).Methods("GET")
+		s.HandleFunc("/rate", setRate).Methods("POST")
+		s.HandleFunc("/blacklist", getBlackList).Methods("GET")
+		s.HandleFunc("/blacklist", setBlackList).Methods("POST")
+		s.HandleFunc("/srcblacklist", getSrcBlackList).Methods("GET")
+		s.HandleFunc("/srcblacklist", setSrcBlackList).Methods("POST")
+
+		// Authentication and rate limiting middleware
+		s.Use(func(next http.Handler) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				// Rate limiting
+				adminRateMu.Lock()
+				allowed := adminRateLimiter.Allow()
+				adminRateMu.Unlock()
+				if !allowed {
+					log.Printf("admin rate limit exceeded from %s", r.RemoteAddr)
+					w.WriteHeader(http.StatusTooManyRequests)
+					return
+				}
+
+				log.Printf("admin request from %s", r.RemoteAddr)
+
+				// Constant-time comparison for authentication
+				authHeader := r.Header.Get("Authorization")
+				expectedAuth := "Basic " + key
+				if subtle.ConstantTimeCompare([]byte(authHeader), []byte(expectedAuth)) != 1 {
+					w.WriteHeader(http.StatusUnauthorized)
+					return
+				}
+				next.ServeHTTP(w, r)
+			})
 		})
-	})
+	} else {
+		// If no key configured, return 503 for config endpoints
+		r.PathPrefix("/config").HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			w.Write([]byte("Admin API disabled - ADMIN_KEY not configured"))
+		})
+	}
 
 	srv := &http.Server{
 		Handler:      r,

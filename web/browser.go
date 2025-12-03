@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"os"
@@ -225,25 +226,102 @@ func copy(this js.Value, args []js.Value) interface{} {
 		dst := args[1].String()
 		singleFilename := args[2].String()
 		cb := args[3]
-		if singleFilename != "" && src.Length() == 1 {
-			dst = filepath.Join(dst, singleFilename)
-		}
-		logf("copy: %v to %s", src, dst)
-		var cmd strings.Builder
-		cmd.WriteString("cp ")
+
+		// Check if destination is a directory
+		dstInfo, err := sftpClient.Lstat(dst)
+		dstIsDir := err == nil && dstInfo.IsDir()
+
 		for i := 0; i < src.Length(); i++ {
-			s := src.Index(i).String()
-			cmd.WriteString(s + " ")
-		}
-		cmd.WriteString(dst)
-		res, err := runCmd(cmd.String())
-		if err != nil {
-			log.Printf("failed to copy %v to %s: %v, stderr: [%s]", src, dst, err, res)
-			apiResponse(cb, err)
-			return
+			srcPath := src.Index(i).String()
+			var targetPath string
+
+			if singleFilename != "" && src.Length() == 1 {
+				// Single file with custom name
+				if dstIsDir {
+					targetPath = filepath.Join(dst, singleFilename)
+				} else {
+					targetPath = dst
+				}
+			} else if dstIsDir {
+				targetPath = filepath.Join(dst, filepath.Base(srcPath))
+			} else {
+				targetPath = dst
+			}
+
+			logf("copy: %s to %s", srcPath, targetPath)
+
+			if err := sftpCopyFile(srcPath, targetPath); err != nil {
+				log.Printf("failed to copy %s to %s: %v", srcPath, targetPath, err)
+				apiResponse(cb, err)
+				return
+			}
 		}
 		apiResponse(cb, nil)
 	}()
+	return nil
+}
+
+// sftpCopyFile copies a file using SFTP (secure, no shell injection)
+func sftpCopyFile(src, dst string) error {
+	srcInfo, err := sftpClient.Lstat(src)
+	if err != nil {
+		return fmt.Errorf("failed to stat source: %v", err)
+	}
+
+	if srcInfo.IsDir() {
+		return sftpCopyDir(src, dst)
+	}
+
+	srcFile, err := sftpClient.Open(src)
+	if err != nil {
+		return fmt.Errorf("failed to open source: %v", err)
+	}
+	defer srcFile.Close()
+
+	dstFile, err := sftpClient.Create(dst)
+	if err != nil {
+		return fmt.Errorf("failed to create destination: %v", err)
+	}
+	defer dstFile.Close()
+
+	_, err = io.Copy(dstFile, srcFile)
+	if err != nil {
+		return fmt.Errorf("failed to copy content: %v", err)
+	}
+
+	// Preserve permissions
+	return sftpClient.Chmod(dst, srcInfo.Mode())
+}
+
+// sftpCopyDir recursively copies a directory using SFTP
+func sftpCopyDir(src, dst string) error {
+	srcInfo, err := sftpClient.Lstat(src)
+	if err != nil {
+		return err
+	}
+
+	if err := sftpClient.MkdirAll(dst); err != nil {
+		return fmt.Errorf("failed to create directory: %v", err)
+	}
+
+	if err := sftpClient.Chmod(dst, srcInfo.Mode()); err != nil {
+		return fmt.Errorf("failed to set directory permissions: %v", err)
+	}
+
+	entries, err := sftpClient.ReadDir(src)
+	if err != nil {
+		return fmt.Errorf("failed to read directory: %v", err)
+	}
+
+	for _, entry := range entries {
+		srcPath := filepath.Join(src, entry.Name())
+		dstPath := filepath.Join(dst, entry.Name())
+
+		if err := sftpCopyFile(srcPath, dstPath); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 

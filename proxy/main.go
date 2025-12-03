@@ -45,7 +45,7 @@ func main() {
 
 	publicAddr := flag.String("pub", defaultPub, "listener address (env: PORT)")
 	adminAddr := flag.String("priv", defaultPriv, "admin listener address (env: ADMIN_PORT)")
-	adminKey := flag.String("adm-key", getEnvOrDefault("ADMIN_KEY", "qtIazZDhzrYERShXuYpqRx"), "admin api key (env: ADMIN_KEY)")
+	adminKey := flag.String("adm-key", os.Getenv("ADMIN_KEY"), "admin api key (env: ADMIN_KEY) - REQUIRED for admin API")
 	auditLogFile := flag.String("al", getEnvOrDefault("AUDIT_LOG", "connections.log"), "log file to store connection request (env: AUDIT_LOG)")
 	flag.Parse()
 	if *publicAddr == "" || *adminAddr == "" {
@@ -66,6 +66,10 @@ func main() {
 		Handler:   handleWss,
 	}
 
+	if *adminKey == "" {
+		log.Printf("WARNING: ADMIN_KEY not set - admin API will be disabled")
+		log.Printf("Set ADMIN_KEY environment variable to enable admin API")
+	}
 	startAdmin(*adminAddr, *adminKey)
 	r := mux.NewRouter()
 	// Health check endpoint for Railway
@@ -303,8 +307,51 @@ func bootHandshake(config *websocket.Config, r *http.Request) error {
 var (
 	blacklistedSources []string
 	blacklistSrcMu     sync.RWMutex
-	sourceRates        = map[string]*rate.Limiter{}
+
+	// Rate limiter with TTL support
+	sourceRates   = map[string]*rateLimiterEntry{}
+	sourceRatesMu sync.RWMutex
 )
+
+// rateLimiterEntry holds a rate limiter with last access time for TTL cleanup
+type rateLimiterEntry struct {
+	limiter    *rate.Limiter
+	lastAccess time.Time
+}
+
+const (
+	rateLimiterTTL      = 1 * time.Hour  // Remove entries not accessed for 1 hour
+	rateLimiterCleanup  = 10 * time.Minute // Run cleanup every 10 minutes
+)
+
+func init() {
+	// Start background cleanup goroutine for rate limiters
+	go func() {
+		ticker := time.NewTicker(rateLimiterCleanup)
+		defer ticker.Stop()
+		for range ticker.C {
+			cleanupSourceRates()
+		}
+	}()
+}
+
+// cleanupSourceRates removes rate limiter entries that haven't been accessed within TTL
+func cleanupSourceRates() {
+	sourceRatesMu.Lock()
+	defer sourceRatesMu.Unlock()
+
+	now := time.Now()
+	cleaned := 0
+	for ip, entry := range sourceRates {
+		if now.Sub(entry.lastAccess) > rateLimiterTTL {
+			delete(sourceRates, ip)
+			cleaned++
+		}
+	}
+	if cleaned > 0 {
+		log.Printf("Cleaned up %d expired rate limiter entries, %d remaining", cleaned, len(sourceRates))
+	}
+}
 
 func getIPAdress(ws *websocket.Conn) (bool, []string) {
 	// using sprintf as it panics locally
@@ -313,40 +360,134 @@ func getIPAdress(ws *websocket.Conn) (bool, []string) {
 		addresses := strings.Split(ws.Request().Header.Get(h), ",")
 		for i := len(addresses) - 1; i >= 0; i-- {
 			ip := strings.TrimSpace(addresses[i])
-
 			ips = append(ips, ip)
 		}
 	}
 	ips = append(ips, fmt.Sprintf("%v", ws.RemoteAddr()))
+
+	// Check source blacklist
 	blacklistSrcMu.RLock()
-	defer blacklistSrcMu.RUnlock()
-	if sourceRates[ips[0]] == nil {
-		sourceRates[ips[0]] = rate.NewLimiter(rate.Limit(1), 1)
-	}
 	for _, bi := range blacklistedSources {
 		for _, ip := range ips {
 			if strings.HasPrefix(ip, bi) {
+				blacklistSrcMu.RUnlock()
 				return true, ips
 			}
 		}
 	}
-	return !sourceRates[ips[0]].Allow(), ips
+	blacklistSrcMu.RUnlock()
+
+	// Check/update rate limiter with TTL
+	sourceRatesMu.Lock()
+	entry := sourceRates[ips[0]]
+	if entry == nil {
+		entry = &rateLimiterEntry{
+			limiter:    rate.NewLimiter(rate.Limit(1), 1),
+			lastAccess: time.Now(),
+		}
+		sourceRates[ips[0]] = entry
+	} else {
+		entry.lastAccess = time.Now()
+	}
+	allowed := entry.limiter.Allow()
+	sourceRatesMu.Unlock()
+
+	return !allowed, ips
 }
 
 var (
-	blacklistedTargets = []string{"localhost", "127.0.0.1", "::1"}
-	// blacklistedTargets = []string{}
-	blacklistMu sync.RWMutex
+	blacklistedTargets = []string{"localhost"}
+	blacklistMu        sync.RWMutex
+
+	// Private and reserved IP ranges (CIDR notation)
+	privateNetworks = []string{
+		"127.0.0.0/8",     // IPv4 loopback
+		"10.0.0.0/8",      // RFC1918 private
+		"172.16.0.0/12",   // RFC1918 private
+		"192.168.0.0/16",  // RFC1918 private
+		"169.254.0.0/16",  // Link-local
+		"0.0.0.0/8",       // Current network
+		"224.0.0.0/4",     // Multicast
+		"240.0.0.0/4",     // Reserved
+		"255.255.255.255/32", // Broadcast
+		"::1/128",         // IPv6 loopback
+		"fc00::/7",        // IPv6 unique local
+		"fe80::/10",       // IPv6 link-local
+		"ff00::/8",        // IPv6 multicast
+		"::ffff:0:0/96",   // IPv4-mapped IPv6
+	}
+	parsedPrivateNetworks []*net.IPNet
 )
 
+func init() {
+	// Pre-parse all private network CIDRs for efficiency
+	for _, cidr := range privateNetworks {
+		_, network, err := net.ParseCIDR(cidr)
+		if err != nil {
+			log.Printf("WARNING: Failed to parse private network CIDR %s: %v", cidr, err)
+			continue
+		}
+		parsedPrivateNetworks = append(parsedPrivateNetworks, network)
+	}
+}
+
+// isPrivateOrReservedIP checks if an IP address is private, loopback, or reserved
+func isPrivateOrReservedIP(ip net.IP) bool {
+	if ip == nil {
+		return false
+	}
+
+	// Check against all private/reserved networks
+	for _, network := range parsedPrivateNetworks {
+		if network.Contains(ip) {
+			return true
+		}
+	}
+
+	// Additional checks using Go's built-in functions
+	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() ||
+		ip.IsLinkLocalMulticast() || ip.IsMulticast() || ip.IsUnspecified() {
+		return true
+	}
+
+	return false
+}
+
 func isAllowedTarger(host string) bool {
+	// Check explicit blacklist first
 	blacklistMu.RLock()
 	for _, h := range blacklistedTargets {
-		if host == h {
+		if strings.EqualFold(host, h) {
+			blacklistMu.RUnlock()
 			return false
 		}
 	}
 	blacklistMu.RUnlock()
+
+	// Try to parse as IP address directly
+	if ip := net.ParseIP(host); ip != nil {
+		if isPrivateOrReservedIP(ip) {
+			return false
+		}
+		return true
+	}
+
+	// If it's a hostname, resolve it and check all IPs
+	ips, err := net.LookupIP(host)
+	if err != nil {
+		// If we can't resolve, allow it (will fail at connection time)
+		// This prevents DNS-based blocking evasion while still allowing valid external hosts
+		log.Printf("WARNING: Could not resolve hostname %s: %v - allowing connection attempt", host, err)
+		return true
+	}
+
+	// Check all resolved IPs - block if ANY resolve to private/reserved
+	for _, ip := range ips {
+		if isPrivateOrReservedIP(ip) {
+			log.Printf("Blocked connection to %s - resolves to private/reserved IP %s", host, ip)
+			return false
+		}
+	}
 
 	return true
 }

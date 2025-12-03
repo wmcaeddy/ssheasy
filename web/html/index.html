@@ -137,8 +137,15 @@ window.onload = function() {
     }
   }
 
+  // Escape HTML to prevent XSS
+  escapeHtml = function(text) {
+    var div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
   showServerKey = function(key) {
-    $('#fingerprintMsg').html("RSA key fingerprint is " + key + " <br>Are you sure you want to continue connecting (yes/no)?")
+    $('#fingerprintMsg').html("RSA key fingerprint is <code>" + escapeHtml(key) + "</code><br>Are you sure you want to continue connecting (yes/no)?")
     $('#fingerprintModal').modal('show')
   }
 
@@ -185,7 +192,7 @@ window.onload = function() {
         }
     }, 100); // 100ms delay, can be adjusted
 
-    $('#conInf').html(status);
+    $('#conInf').text(status);
     if(home != "nil") { 
       updateFileBrowserVisibility(true);
     } else {
@@ -203,21 +210,29 @@ window.onload = function() {
       const host = params.get("host");
       const port = params.get("port") || 22;
       const user = params.get("user");
-      const password = params.get("password");
-      // Optionally support pk and webauthnKey as well
-      const pk = params.get("pk") || "";
+      // Security: Do not support password in URL - it appears in logs, history, referrers
       const webauthnKey = params.get("webauthnKey") || -1;
-      const doConnect = params.get("connect")  || "true";
+      const doConnect = params.get("connect") || "true";
+
+      // Warn if someone tried to pass password via URL
+      if (params.get("password") || params.get("pk")) {
+        showErr("Security: Password and private key parameters are not supported in URLs. Please enter credentials manually.");
+        // Still fill in non-sensitive fields
+        if (host) $('#hostInp').val(host);
+        if (port) $('#portInp').val(port);
+        if (user) $('#usrInp').val(user);
+        if (webauthnKey != -1) $('#webauthnKeySelect').val(webauthnKey);
+        return;
+      }
 
       if (host) $('#hostInp').val(host);
       if (port) $('#portInp').val(port);
       if (user) $('#usrInp').val(user);
-      if (password) $('#passInp').val(password);
-      if (pk) $('#pkInp').val(pk);
       if (webauthnKey != -1) $('#webauthnKeySelect').val(webauthnKey);
 
-      if (host && port && doConnect === "true") {
-        showMsg('Connecting...');
+      // Auto-connect only works with WebAuthn keys (no password/pk in URL)
+      if (host && port && doConnect === "true" && webauthnKey != -1) {
+        showMsg('Connecting with WebAuthn key...');
         $('#conBtn').prop('disabled', true);
         initConnection(
           term.rows,
@@ -225,16 +240,15 @@ window.onload = function() {
           host,
           Number(port),
           user,
-          password,
-          pk,
+          '',  // No password from URL
+          '',  // No private key from URL
           $('#bypassProxyInp').is(':checked'),
           false,
-          webauthnKey != -1
+          true
         );
-      } else {
-        if(doConnect == "true") {
-          showErr("Missing required connection parameters in URL.");
-        }
+      } else if (doConnect === "true" && webauthnKey == -1) {
+        // Pre-fill form but don't auto-connect without WebAuthn
+        showMsg('Please enter your credentials to connect.');
       }
     }
   }
@@ -332,7 +346,7 @@ window.onload = function() {
           publicKey: publicKeyCredentialCreationOptions
       }).then(function(creds) {
         var pk = parsePublicKey(JSON.stringify(creds))
-        showMsg('Copy paster the following public key into your servers <i>authorized_keys</i> file: <code>' + pk.sshKey + '</code>')
+        showMsgHtml('Copy paste the following public key into your servers <i>authorized_keys</i> file: <code>' + escapeHtml(pk.sshKey) + '</code>')
         pk.name = name
         pk.type = type
         console.log(pk)
@@ -364,11 +378,11 @@ window.onload = function() {
     }
     $('#webauthnKeySelect').on('change', function(e){
       if (this.value == null || this.value == -1) {
-        showMsg('') 
+        showMsg('')
         return
       }
-      var pk = itemList[this.value]; 
-      showMsg('Selected public key: <code>' + pk.sshKey + '</code>')
+      var pk = itemList[this.value];
+      showMsgHtml('Selected public key: <code>' + escapeHtml(pk.sshKey) + '</code>')
     });
   }
 
@@ -400,7 +414,7 @@ window.onload = function() {
   }
 
   showReconnect = function(errorMsg) {
-    $('#connLostMsg').html("The connection to your server was interrupted: " + errorMsg + "<br>Do you want to reconnect?")
+    $('#connLostMsg').html("The connection to your server was interrupted: <strong>" + escapeHtml(errorMsg) + "</strong><br>Do you want to reconnect?")
     $('#reconnectModal').modal('show')
   }
 
@@ -413,18 +427,28 @@ window.onload = function() {
     }
   }
 
-  showMsg = function(msg) {
+  // showMsg displays a message. Set isHtml=true if msg contains safe HTML
+  showMsg = function(msg, isHtml) {
     $('#errMsg').hide()
     $('#msg').show()
-    $('#msg').html(msg);
-  } 
+    if (isHtml) {
+      $('#msg').html(msg);
+    } else {
+      $('#msg').text(msg);
+    }
+  }
+
+  // showMsgHtml is a convenience function for messages with safe HTML structure
+  showMsgHtml = function(msg) {
+    showMsg(msg, true);
+  }
 
   showErr = function(msg) {
     $('#msg').hide();
     $('#conPan').show();
     $('#conBtn').prop('disabled',false);
     $('#errMsg').show();
-    $('#errMsg').html(msg);
+    $('#errMsg').text(msg);  // Always escape error messages
   }
 
   makeTermFullScreen = function(){

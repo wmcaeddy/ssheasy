@@ -25,12 +25,16 @@ services:
     hostname: proxy
     volumes:
       - ./proxy/logs/:/logs/
+    environment:
+      - ADMIN_KEY=${ADMIN_KEY:-}  # Set ADMIN_KEY env var to enable admin API
     command:
       - './proxy'
       - '-al'
       - '/logs/connections.log'
-    ports:
-      - 6666:6666
+    # Admin port (6666) not exposed externally - only accessible within Docker network
+    # Access admin API via: docker exec proxy curl http://localhost:6666/metrics
+    expose:
+      - "6666"
     restart: always
 
   prometheus:

@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
+	"crypto/sha256"
 	"encoding/asn1"
 	"encoding/base64"
 	"fmt"
@@ -158,6 +159,24 @@ func (k webauthPublicKey) Marshal() []byte {
 }
 
 func (w webauthPublicKey) Verify(data []byte, sig *ssh.Signature) error {
+	// Parse the signature blob to extract R and S values
+	type ecdsaSignature struct {
+		R, S *big.Int
+	}
+
+	var ecdsaSig ecdsaSignature
+	if err := ssh.Unmarshal(sig.Blob, &ecdsaSig); err != nil {
+		return fmt.Errorf("failed to parse ECDSA signature: %v", err)
+	}
+
+	// Hash the data using SHA256 (ES256 = ECDSA with P-256 and SHA-256)
+	hash := sha256.Sum256(data)
+
+	// Verify the ECDSA signature
+	if !ecdsa.Verify(&w.PublicKey, hash[:], ecdsaSig.R, ecdsaSig.S) {
+		return fmt.Errorf("ECDSA signature verification failed")
+	}
+
 	return nil
 }
 
