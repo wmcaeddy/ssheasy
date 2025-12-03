@@ -2,8 +2,10 @@
 <html>
   <head>
     <title>WebSSH Client</title>
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
 
-    
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
 
     <!-- Xterm.js CSS from CDN -->
@@ -257,7 +259,7 @@ window.onload = function() {
            detachedFileBrowserIframe = null; // Clear the stored reference
       }
       // Ensure the src is set (handles initial load and re-showing)
-      $("#fbFrame").attr("src","browser.html");
+      $("#fbFrame").attr("src","browser.html?v=2");
     } else { // File browser is being hidden
       console.log('Attempting to hide file browser.');
       fileBrowserRow.addClass('d-none');
@@ -779,7 +781,9 @@ li button {
         fitAddon.fit();
         const resizeObserver = new ResizeObserver((entries) => {
           fitAddon.fit();
-          changeWindowSize(term.rows, term.cols);
+          if (typeof changeWindowSize === 'function') {
+            changeWindowSize(term.rows, term.cols);
+          }
           console.log("Size changed",term.rows, term.cols);
         });
         resizeObserver.observe(document.getElementById('terminal'));
