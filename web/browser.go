@@ -3,6 +3,7 @@ package main
 import (
 	"archive/zip"
 	"bytes"
+	"encoding/base64"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -345,7 +346,7 @@ func getContent(this js.Value, args []js.Value) interface{} {
 		item := args[0].String()
 		cb := args[1]
 
-		log.Printf("getContetn: %s", item)
+		log.Printf("getContent: %s", item)
 		f, err := sftpClient.Open(item)
 		if err != nil {
 			log.Printf("failed to open: %v", err)
@@ -358,7 +359,36 @@ func getContent(this js.Value, args []js.Value) interface{} {
 			cb.Invoke(nil, 400)
 			return
 		}
-		cb.Invoke(string(fc), 200)
+
+		// Check if file is an image and return as base64 data URL
+		ext := strings.ToLower(filepath.Ext(item))
+		mimeType := ""
+		switch ext {
+		case ".png":
+			mimeType = "image/png"
+		case ".jpg", ".jpeg":
+			mimeType = "image/jpeg"
+		case ".gif":
+			mimeType = "image/gif"
+		case ".svg":
+			mimeType = "image/svg+xml"
+		case ".webp":
+			mimeType = "image/webp"
+		case ".bmp":
+			mimeType = "image/bmp"
+		case ".ico":
+			mimeType = "image/x-icon"
+		}
+
+		if mimeType != "" {
+			// Return as base64 data URL for images
+			encoded := base64.StdEncoding.EncodeToString(fc)
+			dataURL := fmt.Sprintf("data:%s;base64,%s", mimeType, encoded)
+			cb.Invoke(dataURL, 200)
+		} else {
+			// Return raw content for text files
+			cb.Invoke(string(fc), 200)
+		}
 	}()
 	return nil
 }

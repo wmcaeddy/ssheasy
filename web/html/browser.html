@@ -7,18 +7,75 @@
     <meta http-equiv="Expires" content="0">
 
     <!-- Dependencies - using vendor versions to ensure compatibility with forked angular-filemanager -->
-    <script src="vendor/angular-filemanager/dep/jquery.min.js?v=2"></script>
-    <script src="vendor/angular/angular.min.js?v=2"></script>
-    <script src="vendor/angular-translate/dist/angular-translate.min.js?v=2"></script>
-    <script src="vendor/ng-file-upload/dist/ng-file-upload.min.js?v=2"></script>
-    <script src="vendor/angular-filemanager/dep/bootstrap.min.js?v=2"></script>
-    <script src="vendor/angular-filemanager/dep/FileSaver.js?v=2"></script>
+    <script src="vendor/angular-filemanager/dep/jquery.min.js?v=3"></script>
+    <script src="vendor/angular/angular.min.js?v=3"></script>
+    <script src="vendor/angular-translate/dist/angular-translate.min.js?v=3"></script>
+    <script src="vendor/ng-file-upload/dist/ng-file-upload.min.js?v=3"></script>
+    <script src="vendor/angular-filemanager/dep/bootstrap.min.js?v=3"></script>
+    <script src="vendor/angular-filemanager/dep/FileSaver.js?v=3"></script>
 
-    <link rel="stylesheet" href="vendor/angular-filemanager/dep/bootstrap.min.css?v=2" />
+    <link rel="stylesheet" href="vendor/angular-filemanager/dep/bootstrap.min.css?v=3" />
 
     <!-- angular-filemanager - local forked version with SFTP bridges -->
-    <link rel="stylesheet" href="vendor/angular-filemanager/angular-filemanager.min.css?v=2">
-    <script src="vendor/angular-filemanager/angular-filemanager.min.js?v=2"></script>
+    <link rel="stylesheet" href="vendor/angular-filemanager/angular-filemanager.min.css?v=3">
+    <script src="vendor/angular-filemanager/angular-filemanager.min.js?v=3"></script>
+
+    <!-- Custom CSS fixes for modal overflow and preview issues -->
+    <style>
+      /* Fix modal overflow - ensure buttons are always visible */
+      .modal-dialog {
+        display: flex;
+        flex-direction: column;
+        max-height: 90vh;
+        margin: 5vh auto;
+      }
+      .modal-content {
+        display: flex;
+        flex-direction: column;
+        max-height: 100%;
+        overflow: hidden;
+      }
+      .modal-body {
+        overflow-y: auto;
+        overflow-x: hidden;
+        flex: 1 1 auto;
+        max-height: calc(90vh - 150px);
+      }
+      .modal-footer {
+        flex-shrink: 0;
+        border-top: 1px solid #e5e5e5;
+        padding: 15px;
+      }
+
+      /* Fix long filename text wrapping */
+      .modal .breadcrumb,
+      .modal-body p,
+      .modal-body span,
+      .modal-body label,
+      .modal-body input {
+        word-wrap: break-word;
+        word-break: break-all;
+        overflow-wrap: break-word;
+      }
+      .modal-body input[type="text"] {
+        width: 100%;
+      }
+
+      /* Fix image preview display */
+      .modal img.preview {
+        display: block;
+        max-width: 100%;
+        max-height: 60vh;
+        margin: 0 auto;
+        object-fit: contain;
+      }
+
+      /* Ensure upload form elements are visible */
+      .upload-list {
+        max-height: 200px;
+        overflow-y: auto;
+      }
+    </style>
   </head>
   <body>
       <div class="ng-cloak">
