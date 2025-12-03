@@ -496,6 +496,20 @@ window.onload = function() {
     document.body.removeChild(element);
   }
 
+  var terminalFontSize = 14; // default xterm.js font size
+
+  increaseFontSize = function() {
+    terminalFontSize = Math.min(terminalFontSize + 1, 32);
+    term.options.fontSize = terminalFontSize;
+    fitAddon.fit();
+  }
+
+  decreaseFontSize = function() {
+    terminalFontSize = Math.max(terminalFontSize - 1, 8);
+    term.options.fontSize = terminalFontSize;
+    fitAddon.fit();
+  }
+
   $(document).ready(function(){
     $('#conBtn').prop('disabled',true);
     $('#hostInp').keyup(function(){ $('#conBtn').prop('disabled', notReady() ? true : false); })
@@ -753,6 +767,8 @@ li button {
                 </div>
                 <button type="button" class="btn btn-link col-md-1" onclick="searchAddon.findNext($('#searchTxt').val(),{caseSensitive:  $('#matchCaseChb').prop('checked')})">Find Next</button>
                 <button type="button" class="btn btn-link col-md-1" onclick="searchAddon.findPrevious($('#searchTxt').val(),{caseSensitive:  $('#matchCaseChb').prop('checked')})">Find Previous</button>
+                <button type="button" class="btn btn-link col-md-1" onclick="decreaseFontSize();" title="Decrease terminal font size">A-</button>
+                <button type="button" class="btn btn-link col-md-1" onclick="increaseFontSize();" title="Increase terminal font size">A+</button>
                 <button type="button" class="btn btn-link col-md-1" onclick="toggleFullScreen();">Toggle Fullscreen</button>
                 <button id="toggleFileBrowserBtn" type="button" class="btn btn-link col-md-1">Show File Browser</button>
                 <button type="button" class="btn btn-link col-md-1" onclick="downloadHistory('ssheasy.txt');" title="Download the history of your terminal session">Download</button>
